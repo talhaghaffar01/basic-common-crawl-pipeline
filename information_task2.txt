@@ -1,0 +1,60 @@
+Worker:
+Write the extracted and filtered document content to an object store. It should be possible to pass the address of the object store bucket to the worker. If you don't already have an object store bucket lying around, you can spin up a minio/minio container for that and pass the object store address to the worker. Which file format would you use to store the entries on the object store?
+
+First, let's set up MinIO using Docker
+Add MinIO client dependencies
+Modify the worker to store documents
+Choose an efficient file format for storage
+
+
+First, create a docker-compose.yml for MinIO:
+Create a new file storage.py:
+Update worker.py:
+Start MinIO:
+
+
+    Regarding the file format choice:
+I chose MessagePack (msgpack) because:
+
+More efficient than JSON (smaller size, faster parsing)
+Supports binary data
+Language-agnostic format
+Good compression capabilities
+Maintains data types
+Fast serialization/deserialization
+The storage structure:
+
+Files are organized by date: YYYY/MM/DD/
+File naming: {url_hash}_{timestamp}.msgpack
+Each file contains:
+Document content
+Original metadata
+Processing timestamp
+Processing version info
+
+python worker.py \
+    --minio-endpoint=localhost:9500 \
+    --minio-access-key=minioadmin \
+    --minio-secret-key=minioadmin \
+    --minio-bucket=commoncrawl-data
+This way:
+
+Batcher metrics remain on port 9000
+Worker metrics remain on port 9001
+Prometheus remains on port 9090
+MinIO API runs on port 9500
+MinIO console runs on port 9501
+The sequence to run everything should be:
+
+Start MinIO:
+bash
+Copy Code
+docker-compose up -d
+Start Prometheus:
+bash
+Copy Code
+docker run -d --name prometheus -v ./prometheus:/config -p 9090:9090 prom/prometheus --config.file=/config/scrape_configs.yml
+Run the batcher:
+bash
+Copy Code
+python batcher.py --cluster-idx-filename cluster.idx
