@@ -2,7 +2,8 @@ from abc import ABC, abstractmethod
 import json
 import argparse
 from typing import Any, Mapping, Sequence
-from prometheus_client import Counter, start_http_server
+# (Task 1)
+from prometheus_client import Counter, start_http_server, Gauge
 
 from commoncrawl import (
     BASE_URL,
@@ -14,6 +15,15 @@ from commoncrawl import (
 )
 from rabbitmq import QUEUE_NAME, MessageQueueChannel, RabbitMQChannel
 
+# Metrics for batcher (Task 1)
+BATCHER_METRICS = {
+    'processed_lines': Counter('batcher_processed_lines_total', 'Total number of lines processed'),
+    'english_filtered': Counter('batcher_english_filtered_total', 'Number of non-English documents filtered'),
+    'status_filtered': Counter('batcher_status_filtered_total', 'Number of non-200 status documents filtered'),
+    'valid_urls': Counter('batcher_valid_urls_total', 'Number of valid URLs found'),
+    'batches_published': Counter('batcher_batches_published_total', 'Number of batches published to RabbitMQ'),
+    'processing_progress': Gauge('batcher_processing_progress_bytes', 'Current processing progress in bytes')
+}
 
 BATCH_SIZE = 50
 
@@ -40,7 +50,7 @@ def publish_batch(
     )
     batch_counter.inc()
 
-
+'''
 def process_index(
     index: IndexReader,
     channel: MessageQueueChannel,
@@ -75,7 +85,54 @@ def process_index(
 
     if len(found_urls) > 0:
         publish_batch(channel, found_urls)
+'''
 
+# (task 1)
+def process_index(
+    index: IndexReader,
+    channel: MessageQueueChannel,
+    downloader: Downloader,
+    batch_size: int,
+) -> None:
+    found_urls = []
+    for cdx_chunk in index:
+        data = downloader.download_and_unzip(
+            cdx_chunk[1], int(cdx_chunk[2]), int(cdx_chunk[3])
+        ).decode("utf-8")
+        BATCHER_METRICS['processing_progress'].set(int(cdx_chunk[2]))
+
+        for line in data.split("\n"):
+            if line == "":
+                continue
+            BATCHER_METRICS['processed_lines'].inc()
+
+            values = line.split(" ")
+            metadata = json.loads("".join(values[2:]))
+
+            # Track filtering metrics
+            if "languages" not in metadata or "eng" not in metadata["languages"]:
+                BATCHER_METRICS['english_filtered'].inc()
+                continue
+
+            if metadata["status"] != "200":
+                BATCHER_METRICS['status_filtered'].inc()
+                continue
+
+            BATCHER_METRICS['valid_urls'].inc()
+            found_urls.append(
+                {
+                    "surt_url": values[0],
+                    "timestamp": values[1],
+                    "metadata": metadata,
+                }
+            )
+
+            if len(found_urls) >= batch_size:
+                publish_batch(channel, found_urls)
+                found_urls = []
+
+    if len(found_urls) > 0:
+        publish_batch(channel, found_urls)
 
 def main() -> None:
     args = parse_args()
