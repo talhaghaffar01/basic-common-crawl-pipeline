@@ -21,7 +21,9 @@ BATCHER_METRICS = {
     'status_filtered': Counter('batcher_status_filtered_total', 'Number of non-200 status documents filtered'),
     'valid_urls': Counter('batcher_valid_urls_total', 'Number of valid URLs found'),
     'batches_published': Counter('batcher_batches_published_total', 'Number of batches published to RabbitMQ'),
-    'processing_progress': Gauge('batcher_processing_progress_bytes', 'Current processing progress in bytes')
+    'processing_progress': Gauge('batcher_processing_progress_bytes', 'Current processing progress in bytes'),
+    #Task 7
+    'failed_publishes': Counter('batcher_failed_publishes_total', 'Number of failed batch publishes to RabbitMQ')
 }
 
 
@@ -46,13 +48,20 @@ def publish_batch(
     channel: MessageQueueChannel,
     batch: Sequence[Mapping[str, Any]],
 ) -> None:
-    print("Pushing batch of size", len(batch))
-    channel.basic_publish(
-        exchange="",
-        routing_key=QUEUE_NAME,
-        body=json.dumps(batch),
-    )
-    batch_counter.inc()
+    try:
+        print("Pushing batch of size", len(batch))
+        channel.basic_publish(
+            exchange="",
+            routing_key=QUEUE_NAME,
+            body=json.dumps(batch),
+        )
+        batch_counter.inc()
+        BATCHER_METRICS['batches_published'].inc()
+    except Exception as e:
+        print(f"Failed to publish batch after all retries: {e}")
+        # Store failed batch for later retry or logging
+        BATCHER_METRICS['failed_publishes'].inc()
+        raise
 
 
 # (task 1)
