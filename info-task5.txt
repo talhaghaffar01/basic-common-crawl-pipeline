@@ -1,0 +1,44 @@
+First, add the constants and new metrics
+Modify your process_document function to include length filtering
+Add command-line arguments to allow configuring the length limits
+Update the main function to use the length limits from arguments
+
+python worker.py \
+    --minio-endpoint=localhost:9500 \
+    --minio-access-key=minioadmin \
+    --minio-secret-key=minioadmin \
+    --minio-bucket=commoncrawl-data \
+    --train-tokenizer \
+    --min-length=500 \
+    --max-length=1000000
+
+    Or
+
+python worker.py \
+    --minio-endpoint=localhost:9500 \
+    --minio-access-key=minioadmin \
+    --minio-secret-key=minioadmin \
+    --minio-bucket=commoncrawl-data \
+    --tokenizer-path=tokenizer.json \
+    --min-length=500 \
+    --max-length=1000000
+
+PROMETHEUS QUERIES:
+# Total documents filtered by length
+sum(worker_documents_filtered_too_short_total + worker_documents_filtered_too_long_total)
+
+# Document length distribution
+rate(worker_document_length_sum[5m]) / rate(worker_document_length_count[5m])
+
+# Filter rates
+rate(worker_documents_filtered_too_short_total[5m])
+rate(worker_documents_filtered_too_long_total[5m])
+
+These changes will:
+
+Filter out documents that are too short (<500 chars) or too long (>1M chars)
+Track filtering metrics in Prometheus
+Add document length to processing info metadata
+Allow configurable length limits via command-line arguments
+Log when documents are filtered due to length
+The filtering happens before document storage, so you'll only store documents that meet the length requirements.

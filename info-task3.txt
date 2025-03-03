@@ -1,0 +1,51 @@
+First, let's update requirements.txt:
+Create a new file tokenization.py:
+Update storage.py to include tokenization information:
+Update worker.py:
+
+To run the system with tokenization:
+First, you might want to train the tokenizer on a sample of your data:
+python worker.py \
+    --minio-endpoint=localhost:9500 \
+    --minio-access-key=minioadmin \
+    --minio-secret-key=minioadmin \
+    --minio-bucket=commoncrawl-data \
+    --train-tokenizer
+
+Or use it with a pre-trained tokenizer:
+python worker.py \
+    --minio-endpoint=localhost:9500 \
+    --minio-access-key=minioadmin \
+    --minio-secret-key=minioadmin \
+    --minio-bucket=commoncrawl-data \
+    --tokenizer-path=/path/to/tokenizer.json
+
+The tokenized documents will now include:
+Original text
+Token IDs
+Token strings
+Attention mask
+Metadata and processing information
+
+MinIO Console: http://localhost:9501
+RabbitMQ Management: http://localhost:15672
+Prometheus: http://localhost:9090
+
+Added tokenization using Huggingface tokenizers library
+Created DocumentTokenizer class with BPE tokenizer
+Integrated tokenization into the storage pipeline
+Updated docker-compose.yml to include all services
+Added proper error handling and metrics
+
+To verify the tokenization is working correctly, you should:
+Run all services:
+docker-compose up -d
+
+python batcher.py --cluster-idx-filename cluster.idx
+
+You can verify the tokenization is working by:
+Checking the MinIO bucket for stored documents (they should contain tokenization data)
+http://localhost:9501
+# Login with:
+# Username: minioadmin
+# Password: minioadmin
