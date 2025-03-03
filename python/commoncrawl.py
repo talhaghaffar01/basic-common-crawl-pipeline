@@ -5,9 +5,12 @@ from typing import Generator, List, Optional
 import requests
 
 
-CRAWL_PATH = "cc-index/collections/CC-MAIN-2024-30/indexes"
 BASE_URL = "https://data.commoncrawl.org"
 
+
+def get_crawl_path(version: str) -> str:
+    """Generate crawl path from version."""
+    return f"cc-index/collections/{version}/indexes"
 
 class Downloader(ABC):
     @abstractmethod
