@@ -1,0 +1,38 @@
+	•	Set up MinIO using Docker (minio/minio container).
+	•	Pass the object store bucket address to the worker.
+	•	Modify the worker to store extracted documents.
+	•	Use MessagePack (msgpack) for storage (smaller, faster, supports binary, language-agnostic).
+
+Storage Structure:
+	•	Organized by YYYY/MM/DD/
+	•	File naming: {url_hash}_{timestamp}.msgpack
+	•	Each file includes: content, metadata, timestamp, version info.
+
+Commands:
+
+Start MinIO:
+
+docker-compose up -d
+
+Start Prometheus:
+
+docker run -d --name prometheus -v ./prometheus:/config -p 9090:9090 prom/prometheus --config.file=/config/scrape_configs.yml
+
+Run the batcher:
+
+python batcher.py --cluster-idx-filename cluster.idx
+
+Run the worker:
+
+python worker.py \
+    --minio-endpoint=localhost:9500 \
+    --minio-access-key=minioadmin \
+    --minio-secret-key=minioadmin \
+    --minio-bucket=commoncrawl-data
+
+Ports:
+	•	Batcher: 9000
+	•	Worker: 9001
+	•	Prometheus: 9090
+	•	MinIO API: 9500
+	•	MinIO Console: 9501
