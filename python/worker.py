@@ -14,6 +14,9 @@ from storage import ObjectStore
 from tokenization import DocumentTokenizer
 import os
 
+MIN_DOCUMENT_LENGTH = 500
+MAX_DOCUMENT_LENGTH = 1000000
+
 
 WORKER_METRICS = {
     'processed_batches': Counter('worker_processed_batches_total', 'Number of batches processed'),
@@ -28,6 +31,13 @@ WORKER_METRICS = {
     # Task 3
     'tokenization_errors': Counter('worker_tokenization_errors_total', 'Number of tokenization errors'),
     'tokens_processed': Counter('worker_tokens_processed_total', 'Total number of tokens processed'),
+    # Task 5
+    'documents_filtered_too_short': Counter('worker_documents_filtered_too_short_total',
+                                          'Documents filtered due to being too short'),
+    'documents_filtered_too_long': Counter('worker_documents_filtered_too_long_total',
+                                         'Documents filtered due to being too long'),
+    'document_length': Histogram('worker_document_length', 'Length of processed documents',
+                               buckets=[100, 500, 1000, 10000, 100000, 1000000, 5000000])
 }
 
 batch_counter = Counter("worker_batches", "Number of consumed batches")
@@ -49,13 +59,41 @@ def parse_args() -> argparse.Namespace:
                        help="Path to tokenizer model file")
     parser.add_argument("--train-tokenizer", action="store_true",
                        help="Train tokenizer if no model exists")
+    
+    # Task 5
+    parser.add_argument("--min-length", type=int, default=MIN_DOCUMENT_LENGTH,
+                       help="Minimum document length in characters")
+    parser.add_argument("--max-length", type=int, default=MAX_DOCUMENT_LENGTH,
+                       help="Maximum document length in characters")
 
     return parser.parse_args()
+
+# Task 5
+def check_document_length(text: str) -> bool:
+    """Check if document length is within acceptable range."""
+    length = len(text)
+    WORKER_METRICS['document_length'].observe(length)
+
+    if length < MIN_DOCUMENT_LENGTH:
+        WORKER_METRICS['documents_filtered_too_short'].inc()
+        print(f"Document filtered: too short ({length} chars)")
+        return False
+
+    if length > MAX_DOCUMENT_LENGTH:
+        WORKER_METRICS['documents_filtered_too_long'].inc()
+        print(f"Document filtered: too long ({length} chars)")
+        return False
+
+    return True
 
 # Task 2
 def process_document(text: str, metadata: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """Process and validate document content."""
     if not text or len(text.strip()) == 0:
+        return None
+
+    # Add length filtering - Task 5
+    if not check_document_length(text.strip()):
         return None
 
     return {
@@ -64,7 +102,8 @@ def process_document(text: str, metadata: Dict[str, Any]) -> Optional[Dict[str, 
         'timestamp': datetime.utcnow().isoformat(),
         'processing_info': {
             'processor_version': '1.0',
-            'processing_date': datetime.utcnow().isoformat()
+            'processing_date': datetime.utcnow().isoformat(),
+            'content_length': len(text)  # Add content length to metadata - Task 5
         }
     }
 
@@ -109,6 +148,13 @@ def process_batch(downloader: Downloader, object_store: ObjectStore, ch, method,
 
 def main() -> None:
     args = parse_args()
+
+    # Update length constants if provided via command line - Task 5
+    global MIN_DOCUMENT_LENGTH, MAX_DOCUMENT_LENGTH
+    MIN_DOCUMENT_LENGTH = args.min_length
+    MAX_DOCUMENT_LENGTH = args.max_length
+
+    print(f"Document length filters: min={MIN_DOCUMENT_LENGTH}, max={MAX_DOCUMENT_LENGTH}")
 
     # Initialize tokenizer - Task 3
     tokenizer = DocumentTokenizer()
