@@ -6,3 +6,4 @@ warcio
 minio
 python-snappy
 msgpack
+tokenizers
