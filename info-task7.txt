@@ -1,0 +1,16 @@
+rabbitmq.py to add retry functionality
+publish_batch function in batcher.py
+Add a new metric
+
+
+Automatic reconnection if the connection is lost
+Retry mechanism for failed publishes
+Metrics for tracking failed publishes
+Graceful error handling and logging
+The modifications are minimal while adding robust error handling for RabbitMQ operations. The system will:
+
+Retry up to 3 times on failure
+Wait 2 seconds between retries
+Automatically reconnect if the connection is lost
+Track failed publishes in metrics
+
