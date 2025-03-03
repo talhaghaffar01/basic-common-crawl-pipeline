@@ -2,17 +2,27 @@ from abc import ABC, abstractmethod
 import json
 import argparse
 from typing import Any, Mapping, Sequence
-from prometheus_client import Counter, start_http_server
+from prometheus_client import Counter, start_http_server, Gauge
 
 from commoncrawl import (
     BASE_URL,
-    CRAWL_PATH,
+    get_crawl_path,
     CCDownloader,
     CSVIndexReader,
     Downloader,
     IndexReader,
 )
 from rabbitmq import QUEUE_NAME, MessageQueueChannel, RabbitMQChannel
+
+# Metrics for batcher (Task 1)
+BATCHER_METRICS = {
+    'processed_lines': Counter('batcher_processed_lines_total', 'Total number of lines processed'),
+    'english_filtered': Counter('batcher_english_filtered_total', 'Number of non-English documents filtered'),
+    'status_filtered': Counter('batcher_status_filtered_total', 'Number of non-200 status documents filtered'),
+    'valid_urls': Counter('batcher_valid_urls_total', 'Number of valid URLs found'),
+    'batches_published': Counter('batcher_batches_published_total', 'Number of batches published to RabbitMQ'),
+    'processing_progress': Gauge('batcher_processing_progress_bytes', 'Current processing progress in bytes')
+}
 
 
 BATCH_SIZE = 50
@@ -24,6 +34,10 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Batcher")
     parser.add_argument(
         "--cluster-idx-filename", type=str, help="Input file path", required=True
+    )
+    parser.add_argument(
+        "--crawl-version", type=str, default="CC-MAIN-2024-30",
+        help="Common Crawl version (e.g., CC-MAIN-2024-30)"
     )
     return parser.parse_args()
 
@@ -41,6 +55,7 @@ def publish_batch(
     batch_counter.inc()
 
 
+# (task 1)
 def process_index(
     index: IndexReader,
     channel: MessageQueueChannel,
@@ -52,23 +67,34 @@ def process_index(
         data = downloader.download_and_unzip(
             cdx_chunk[1], int(cdx_chunk[2]), int(cdx_chunk[3])
         ).decode("utf-8")
+        BATCHER_METRICS['processing_progress'].set(int(cdx_chunk[2]))
+
         for line in data.split("\n"):
             if line == "":
                 continue
+            BATCHER_METRICS['processed_lines'].inc()
+
             values = line.split(" ")
             metadata = json.loads("".join(values[2:]))
-            if (
-                "languages" in metadata
-                and "eng" in metadata["languages"]
-                and metadata["status"] == "200"
-            ):
-                found_urls.append(
-                    {
-                        "surt_url": values[0],
-                        "timestamp": values[1],
-                        "metadata": metadata,
-                    }
-                )
+
+            # Track filtering metrics
+            if "languages" not in metadata or "eng" not in metadata["languages"]:
+                BATCHER_METRICS['english_filtered'].inc()
+                continue
+
+            if metadata["status"] != "200":
+                BATCHER_METRICS['status_filtered'].inc()
+                continue
+
+            BATCHER_METRICS['valid_urls'].inc()
+            found_urls.append(
+                {
+                    "surt_url": values[0],
+                    "timestamp": values[1],
+                    "metadata": metadata,
+                }
+            )
+
             if len(found_urls) >= batch_size:
                 publish_batch(channel, found_urls)
                 found_urls = []
@@ -81,8 +107,10 @@ def main() -> None:
     args = parse_args()
     start_http_server(9000)
     channel = RabbitMQChannel()
-    downloader = CCDownloader(f"{BASE_URL}/{CRAWL_PATH}")
+    crawl_path = get_crawl_path(args.crawl_version)
+    downloader = CCDownloader(f"{BASE_URL}/{crawl_path}")
     index_reader = CSVIndexReader(args.cluster_idx_filename)
+
     process_index(index_reader, channel, downloader, BATCH_SIZE)
 
 
