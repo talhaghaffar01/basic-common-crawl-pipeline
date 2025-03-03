@@ -1,0 +1,6 @@
+commoncrawl.py to remove the hardcoded CRAWL_PATH
+batcher.py to accept the crawl version argument
+
+python batcher.py \
+    --cluster-idx-filename cluster.idx \
+    --crawl-version=CC-MAIN-2024-30
