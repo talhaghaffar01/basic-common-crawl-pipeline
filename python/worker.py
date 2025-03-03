@@ -11,6 +11,8 @@ from datetime import datetime
 from commoncrawl import BASE_URL, CCDownloader, Downloader
 from rabbitmq import QUEUE_NAME, rabbitmq_channel
 from storage import ObjectStore
+from tokenization import DocumentTokenizer
+import os
 
 
 WORKER_METRICS = {
@@ -23,6 +25,9 @@ WORKER_METRICS = {
     # Task 2
     'storage_errors': Counter('worker_storage_errors_total', 'Number of storage errors'),
     'stored_documents': Counter('worker_stored_documents_total', 'Number of documents stored successfully'),
+    # Task 3
+    'tokenization_errors': Counter('worker_tokenization_errors_total', 'Number of tokenization errors'),
+    'tokens_processed': Counter('worker_tokens_processed_total', 'Total number of tokens processed'),
 }
 
 batch_counter = Counter("worker_batches", "Number of consumed batches")
@@ -38,6 +43,12 @@ def parse_args() -> argparse.Namespace:
                        help="MinIO secret key")
     parser.add_argument("--minio-bucket", type=str, required=True,
                        help="MinIO bucket name")
+    
+    # Task 3
+    parser.add_argument("--tokenizer-path", type=str, default="tokenizer.json",
+                       help="Path to tokenizer model file")
+    parser.add_argument("--train-tokenizer", action="store_true",
+                       help="Train tokenizer if no model exists")
 
     return parser.parse_args()
 
@@ -99,12 +110,28 @@ def process_batch(downloader: Downloader, object_store: ObjectStore, ch, method,
 def main() -> None:
     args = parse_args()
 
+    # Initialize tokenizer - Task 3
+    tokenizer = DocumentTokenizer()
+    if args.train_tokenizer and not os.path.exists(args.tokenizer_path):
+        print("Training new tokenizer...")
+        # Collect some initial texts for training
+        sample_texts = [
+            "This is a sample text for tokenizer training.",
+            "Another example of text that will help train the tokenizer.",
+            "The more diverse the training data, the better the tokenizer.",
+        ]
+        tokenizer.train(sample_texts, args.tokenizer_path)
+    else:
+        print(f"Loading tokenizer from {args.tokenizer_path}")
+        tokenizer.load(args.tokenizer_path)
+
     # Initialize MinIO client - Task 2
     object_store = ObjectStore(
         args.minio_endpoint,
         args.minio_access_key,
         args.minio_secret_key,
         args.minio_bucket,
+        tokenizer,
     )
     start_http_server(9001)
     downloader = CCDownloader(BASE_URL)
@@ -116,7 +143,7 @@ def main() -> None:
             downloader, object_store, ch, method, properties, body
         ),
     )
-    
+
     print("Worker started. Waiting for messages...")
     channel.start_consuming()
 
