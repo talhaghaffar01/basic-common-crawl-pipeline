@@ -3,3 +3,7 @@ pika
 prometheus-client
 requests
 warcio
+minio
+python-snappy
+msgpack
+tokenizers
